@@ -9,7 +9,8 @@
     SESSION: 'bento_session_v1',
     ORDERS: 'bento_orders_v1',
     CLOUD_CONFIG: 'bento_cloud_config_v1',
-    LAST_USER: 'bento_last_username_v1'
+    LAST_USER: 'bento_last_username_v1',
+    ADMIN_PWD: 'bento_admin_pwd_v1'
   };
 
   function getTodayString() {
@@ -23,6 +24,7 @@
   // ===== 狀態管理 =====
   const state = {
     mode: 'order', // 'order' | 'admin'
+    adminUnlocked: sessionStorage.getItem('bento_admin_unlocked') === '1',
     adminTab: 'dashboard', // 'dashboard' | 'session' | 'menus' | 'cloud'
     stores: [],
     session: {
@@ -30,7 +32,8 @@
       activeStoreIds: ['store_1'],
       deadline: '10:00',
       isClosed: false,
-      announcement: ''
+      announcement: '',
+      adminPassword: localStorage.getItem('bento_admin_pwd_v1') || '1234'
     },
     orders: [],
     selectedStoreId: 'store_1',
@@ -347,7 +350,11 @@
       state.session.announcement = params.get('note');
     }
     if (params.get('admin') === '1') {
-      state.mode = 'admin';
+      if (state.adminUnlocked) {
+        state.mode = 'admin';
+      } else {
+        setTimeout(() => openAdminAuthModal(), 100);
+      }
     }
 
     ensureValidSelectedStore();
@@ -393,6 +400,9 @@
 
   // ===== 3. 雲端與本地資料同步層 =====
   function saveLocalState() {
+    if (state.session && state.session.adminPassword) {
+      localStorage.setItem(STORAGE_KEYS.ADMIN_PWD, state.session.adminPassword);
+    }
     localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(state.session));
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(state.orders));
     localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify(state.stores));
@@ -1340,6 +1350,54 @@
     document.getElementById('firebaseConfigBlock').classList.toggle('hidden', state.cloudConfig.type !== 'firebase');
   }
 
+  // ----- 管理員密碼驗證與變更邏輯 -----
+  function getAdminPassword() {
+    return state.session.adminPassword || localStorage.getItem(STORAGE_KEYS.ADMIN_PWD) || '1234';
+  }
+
+  function openAdminAuthModal() {
+    const modal = document.getElementById('adminAuthModal');
+    const input = document.getElementById('adminAuthPasswordInput');
+    const errEl = document.getElementById('adminAuthError');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    if (errEl) errEl.classList.add('hidden');
+    if (input) {
+      input.value = '';
+      setTimeout(() => input.focus(), 50);
+    }
+  }
+
+  function closeAdminAuthModal() {
+    const modal = document.getElementById('adminAuthModal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function verifyAdminAuth() {
+    const input = document.getElementById('adminAuthPasswordInput');
+    const errEl = document.getElementById('adminAuthError');
+    const entered = (input.value || '').trim();
+    if (entered === getAdminPassword()) {
+      state.adminUnlocked = true;
+      sessionStorage.setItem('bento_admin_unlocked', '1');
+      closeAdminAuthModal();
+      state.mode = 'admin';
+      renderAll();
+      showToast('🔓 已解鎖進入管理人後台', 'success');
+    } else {
+      if (errEl) errEl.classList.remove('hidden');
+      input.select();
+    }
+  }
+
+  function lockAdminSession() {
+    state.adminUnlocked = false;
+    sessionStorage.removeItem('bento_admin_unlocked');
+    state.mode = 'order';
+    renderAll();
+    showToast('🔒 已鎖定並登出管理後台', 'info');
+  }
+
   // ===== 7. 事件綁定 =====
   function bindEvents() {
     // 頂部模式切換
@@ -1348,8 +1406,60 @@
       renderAll();
     });
     document.getElementById('navAdminBtn').addEventListener('click', () => {
-      state.mode = 'admin';
-      renderAll();
+      if (state.adminUnlocked) {
+        state.mode = 'admin';
+        renderAll();
+      } else {
+        openAdminAuthModal();
+      }
+    });
+
+    // 管理員密碼驗證 Modal 事件
+    document.getElementById('confirmAdminAuthBtn').addEventListener('click', verifyAdminAuth);
+    document.getElementById('cancelAdminAuthBtn').addEventListener('click', closeAdminAuthModal);
+    document.getElementById('adminAuthPasswordInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') verifyAdminAuth();
+      if (e.key === 'Escape') closeAdminAuthModal();
+    });
+
+    // 鎖定登出後台按鈕
+    document.getElementById('topLockAdminBtn').addEventListener('click', lockAdminSession);
+    document.getElementById('lockAdminBtn').addEventListener('click', lockAdminSession);
+
+    // 修改管理員密碼按鈕
+    document.getElementById('changeAdminPwdBtn').addEventListener('click', async () => {
+      const oldInput = document.getElementById('oldAdminPwdInput');
+      const newInput = document.getElementById('newAdminPwdInput');
+      const confirmInput = document.getElementById('confirmAdminPwdInput');
+
+      const oldVal = (oldInput.value || '').trim();
+      const newVal = (newInput.value || '').trim();
+      const confirmVal = (confirmInput.value || '').trim();
+
+      if (oldVal !== getAdminPassword()) {
+        showToast('目前密碼輸入錯誤！', 'error');
+        oldInput.focus();
+        return;
+      }
+      if (!newVal || newVal.length < 2) {
+        showToast('請輸入至少 2 個字元的新密碼！', 'error');
+        newInput.focus();
+        return;
+      }
+      if (newVal !== confirmVal) {
+        showToast('兩次輸入的新密碼不一致，請重新確認！', 'error');
+        confirmInput.focus();
+        return;
+      }
+
+      state.session.adminPassword = newVal;
+      localStorage.setItem(STORAGE_KEYS.ADMIN_PWD, newVal);
+      oldInput.value = '';
+      newInput.value = '';
+      confirmInput.value = '';
+
+      await pushToCloud('saveSession', { session: state.session });
+      showToast('✅ 管理員密碼已成功更新！', 'success');
     });
 
     // 菜單搜尋

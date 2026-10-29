@@ -119,7 +119,10 @@
           <i class="fa-solid fa-file-excel"></i> 3. 匯入更新便當 Excel & 編輯菜單
         </button>
         <button class="admin-tab-btn" data-tab="cloud">
-          <i class="fa-solid fa-cloud-arrow-up"></i> 4. 雲端多人連線設定 (Google 試算表)
+          <i class="fa-solid fa-cloud-arrow-up"></i> 4. 雲端連線 & 密碼設定
+        </button>
+        <button id="topLockAdminBtn" class="btn btn-sm btn-outline" style="margin-left:auto; color:#dc2626;" title="鎖定後台並返回點餐畫面">
+          <i class="fa-solid fa-lock"></i> 鎖定登出後台
         </button>
       </div>
 
@@ -333,9 +336,62 @@
             <i class="fa-solid fa-floppy-disk"></i> 儲存雲端連線設定
           </button>
         </div>
+
+        <!-- 管理員密碼修改區塊 -->
+        <div class="admin-card">
+          <div class="admin-card-header">
+            <h2 class="admin-card-title">
+              <i class="fa-solid fa-key" style="color:var(--primary)"></i> 修改管理人後台密碼
+            </h2>
+            <button id="lockAdminBtn" class="btn btn-sm btn-outline" style="color:#dc2626">
+              <i class="fa-solid fa-lock"></i> 立即鎖定並登出後台
+            </button>
+          </div>
+          <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 16px;">
+            設定或變更進入管理人後台的保護密碼（系統預設初始密碼為 <code>1234</code>）。若已綁定雲端同步，新密碼也會一併同步保護。
+          </p>
+          <div class="form-row" style="max-width: 720px;">
+            <div class="form-group">
+              <label for="oldAdminPwdInput">目前密碼</label>
+              <input type="password" id="oldAdminPwdInput" class="form-control" placeholder="請輸入目前密碼..." />
+            </div>
+            <div class="form-group">
+              <label for="newAdminPwdInput">新密碼</label>
+              <input type="password" id="newAdminPwdInput" class="form-control" placeholder="請輸入新密碼..." />
+            </div>
+            <div class="form-group">
+              <label for="confirmAdminPwdInput">確認新密碼</label>
+              <input type="password" id="confirmAdminPwdInput" class="form-control" placeholder="再次輸入新密碼..." />
+            </div>
+          </div>
+          <button id="changeAdminPwdBtn" class="btn btn-primary">
+            <i class="fa-solid fa-shield-halved"></i> 更新管理員密碼
+          </button>
+        </div>
       </div>
     </section>
   </main>
+
+  <!-- 管理員密碼驗證彈窗 Modal -->
+  <div id="adminAuthModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-icon"><i class="fa-solid fa-user-shield"></i></div>
+        <h3>管理人後台驗證</h3>
+        <p>請輸入管理員密碼以進入維護與對帳畫面</p>
+      </div>
+      <div class="form-group" style="margin-top: 14px;">
+        <input type="password" id="adminAuthPasswordInput" class="form-control" placeholder="請輸入管理員密碼 (預設: 1234)" style="text-align: center; font-size: 16px; letter-spacing: 2px;" />
+        <div id="adminAuthError" class="auth-error-msg hidden">密碼錯誤，請重新輸入！</div>
+      </div>
+      <div class="modal-actions">
+        <button id="cancelAdminAuthBtn" class="btn btn-outline" style="flex:1">取消返回</button>
+        <button id="confirmAdminAuthBtn" class="btn btn-primary" style="flex:1">
+          <i class="fa-solid fa-unlock-keyhole"></i> 解鎖進入
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- 浮動通知區 -->
   <div id="toastContainer" class="toast-container"></div>
