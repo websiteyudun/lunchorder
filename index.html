@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>便當訂購與收款管理系統</title>
+  <!-- 圖示庫 FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <!-- SheetJS (xlsx) 用於前端即時讀取與匯出便當 Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- 頂部導覽列 -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand-box">
+        <div class="brand-logo"><i class="fa-solid fa-bowl-rice"></i></div>
+        <div>
+          <div class="brand-title">便當訂購與收款管理系統</div>
+          <div class="brand-sub">支援 Excel 隨時匯入更新菜單・一鍵分享點餐・電話叫餐統計・收款對帳</div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <span id="syncStatusBadge" class="sync-badge sync-local">載入中...</span>
+        <div class="mode-switch">
+          <button id="navOrderBtn" class="mode-btn active">
+            <i class="fa-solid fa-utensils"></i> 我要點便當 (前台)
+          </button>
+          <button id="navAdminBtn" class="mode-btn">
+            <i class="fa-solid fa-user-gear"></i> 管理人後台
+            <span id="todayOrderCountBadge" class="count-pill">0</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-container">
+    <!-- ==================== 1. 訂購者前台視圖 ==================== -->
+    <section id="orderView">
+      <div class="session-meta-bar">
+        <div class="meta-tags">
+          <span class="meta-tag"><i class="fa-regular fa-calendar-check"></i> 訂購日期：<strong id="displaySessionDate">-</strong></span>
+          <span class="meta-tag"><i class="fa-regular fa-clock"></i> 截止時間：<strong id="displayDeadline">-</strong></span>
+        </div>
+      </div>
+
+      <div id="orderStatusBanner" class="status-banner open"></div>
+
+      <!-- 今日開放的店家選擇器 -->
+      <div id="activeStoreTabs" class="store-tabs"></div>
+
+      <div class="order-layout">
+        <!-- 左側：菜單品項區 -->
+        <div class="order-main">
+          <div class="store-header-card">
+            <div class="store-header-top">
+              <div>
+                <h2 id="currentStoreTitle" class="store-title">-</h2>
+                <div id="currentStoreInfo" class="store-info-text">-</div>
+              </div>
+              <div class="search-box">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="menuSearchInput" placeholder="搜尋餐點名稱或分類..." />
+              </div>
+            </div>
+            <div id="currentStoreNotes" class="store-notes-banner hidden"></div>
+          </div>
+
+          <div id="categoryTabs" class="category-tabs"></div>
+          <div id="menuContainer"></div>
+
+          <!-- 今日大家的點餐即時榜 -->
+          <div class="public-orders-section">
+            <h3 class="sidebar-title"><i class="fa-solid fa-users"></i> 今日已送出訂購名單</h3>
+            <div id="publicTodayOrdersList"></div>
+          </div>
+        </div>
+
+        <!-- 右側：選購清單與送出表單 -->
+        <aside class="order-sidebar">
+          <h3 class="sidebar-title"><i class="fa-solid fa-basket-shopping"></i> 我的便當訂購單</h3>
+          <div id="cartItemsList" class="cart-list"></div>
+
+          <div class="cart-total-row">
+            <span>應付總計</span>
+            <span id="cartTotalPrice" class="cart-total-price">$0</span>
+          </div>
+
+          <div class="form-group">
+            <label for="orderUserName"><i class="fa-solid fa-user"></i> 訂購人姓名 <span style="color:#dc2626">*必填</span></label>
+            <input type="text" id="orderUserName" class="form-control" placeholder="請輸入您的姓名或暱稱..." />
+          </div>
+
+          <div class="form-group">
+            <label for="orderNoteInput"><i class="fa-regular fa-comment-dots"></i> 備註 / 客製化需求 (選填)</label>
+            <input type="text" id="orderNoteInput" class="form-control" placeholder="例如：飯少、加辣、不加蔥..." />
+          </div>
+
+          <button id="submitOrderBtn" class="btn btn-primary btn-block" disabled>
+            <i class="fa-solid fa-paper-plane"></i> 確認送出訂購
+          </button>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ==================== 2. 管理人後台視圖 ==================== -->
+    <section id="adminView" class="hidden">
+      <div class="admin-nav-tabs">
+        <button class="admin-tab-btn active" data-tab="dashboard">
+          <i class="fa-solid fa-phone-volume"></i> 1. 今日打電話叫餐 & 收款管理
+        </button>
+        <button class="admin-tab-btn" data-tab="session">
+          <i class="fa-solid fa-bullhorn"></i> 2. 設定今日店家 & 產生點餐網址
+        </button>
+        <button class="admin-tab-btn" data-tab="menus">
+          <i class="fa-solid fa-file-excel"></i> 3. 匯入更新便當 Excel & 編輯菜單
+        </button>
+        <button class="admin-tab-btn" data-tab="cloud">
+          <i class="fa-solid fa-cloud-arrow-up"></i> 4. 雲端多人連線設定 (Google 試算表)
+        </button>
+      </div>
+
+      <!-- 後台分頁 1: 打電話統計 & 收款管理 -->
+      <div id="adminPanel_dashboard" class="admin-panel">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">今日總訂單 / 總份數</div>
+            <div id="statTotalOrders" class="stat-value">0 筆 (0 份)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">今日訂購總金額</div>
+            <div id="statTotalAmount" class="stat-value">$0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">已收款金額 (已繳人數)</div>
+            <div id="statPaidAmount" class="stat-value text-success">$0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">尚未收款差額</div>
+            <div id="statUnpaidAmount" class="stat-value text-danger">$0</div>
+          </div>
+        </div>
+
+        <!-- 區塊 A: 打電話訂購彙整表 -->
+        <div class="admin-card">
+          <div class="admin-card-header">
+            <h2 class="admin-card-title">
+              <i class="fa-solid fa-phone"></i> 打電話叫餐統計清單（自動依店家與品項合併數量）
+            </h2>
+            <div class="admin-toolbar">
+              <button id="refreshOrdersBtn" class="btn btn-sm btn-outline">
+                <i class="fa-solid fa-rotate"></i> 重新整理訂單
+              </button>
+              <button id="quickToggleCloseBtn" class="btn btn-sm btn-danger">
+                <i class="fa-solid fa-gavel"></i> 立即結單 / 停止收單
+              </button>
+            </div>
+          </div>
+          <div id="phoneCallSummaryContainer"></div>
+        </div>
+
+        <!-- 區塊 B: 訂購人明細與是否繳錢管理 -->
+        <div class="admin-card">
+          <div class="admin-card-header">
+            <h2 class="admin-card-title">
+              <i class="fa-solid fa-hand-holding-dollar"></i> 訂購人明細與繳費狀態管理（點擊按鈕即可切換已繳/未繳）
+            </h2>
+            <div class="admin-toolbar">
+              <button id="exportTodayExcelBtn" class="btn btn-sm btn-outline">
+                <i class="fa-solid fa-file-export"></i> 匯出今日收款 Excel
+              </button>
+              <button id="clearTodayOrdersBtn" class="btn btn-sm btn-outline" style="color:#dc2626">
+                <i class="fa-regular fa-trash-can"></i> 清空當日訂單
+              </button>
+            </div>
+          </div>
+          <div class="table-scroll" style="max-height: none;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>訂購人姓名</th>
+                  <th>店家</th>
+                  <th>訂購品項 × 數量</th>
+                  <th>備註</th>
+                  <th>應付金額</th>
+                  <th>是否已繳錢</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="paymentManagementBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 後台分頁 2: 今日開團設定 & 分享網址 -->
+      <div id="adminPanel_session" class="admin-panel hidden">
+        <div class="admin-card">
+          <div class="admin-card-header">
+            <h2 class="admin-card-title"><i class="fa-solid fa-store"></i> 挑選今日開放訂購的便當店與收單時間</h2>
+            <div class="admin-toolbar">
+              <button id="selectAllStoresBtn" class="btn btn-sm btn-outline">全選全部店家</button>
+              <button id="clearAllStoresBtn" class="btn btn-sm btn-outline">取消全選</button>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom: 16px;">
+            <div class="form-group">
+              <label for="sessionDateInput">訂購日期</label>
+              <input type="date" id="sessionDateInput" class="form-control" />
+            </div>
+            <div class="form-group">
+              <label for="sessionDeadlineInput">每日收單截止時間 (超過時間自動停止點餐)</label>
+              <input type="time" id="sessionDeadlineInput" class="form-control" value="10:00" />
+            </div>
+            <div class="form-group flex-2">
+              <label for="sessionAnnouncementInput">今日訂購公告 / 提醒 (選填)</label>
+              <input type="text" id="sessionAnnouncementInput" class="form-control" placeholder="例如：今天訂上鼎雞腿，請在 9:50 前完成點餐並找小明繳錢！" />
+            </div>
+          </div>
+
+          <label style="display:block; font-size:13px; font-weight:700; margin-bottom:8px;">
+            勾選今日要給大家點的店家（可單選 1 家，或複選多家同時開團）：
+          </label>
+          <div id="sessionStoresChecklist" class="stores-checklist-grid"></div>
+
+          <button id="saveSessionBtn" class="btn btn-primary">
+            <i class="fa-solid fa-check"></i> 儲存並發布今日開團菜單
+          </button>
+
+          <!-- 分享網址區 -->
+          <div class="share-url-box">
+            <div style="font-weight: 800; font-size: 15px; color: #0f172a;">
+              <i class="fa-solid fa-share-nodes"></i> 複製訂購網址傳給同事（網址已自動夾帶您勾選的店家、截止時間與雲端連線參數）
+            </div>
+            <div class="share-url-row">
+              <input type="text" id="shareOrderUrlInput" class="form-control" readonly />
+              <button id="copyShareUrlBtn" class="btn btn-primary" style="white-space: nowrap;">
+                <i class="fa-regular fa-copy"></i> 複製點餐網址
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 後台分頁 3: 匯入便當 Excel 與菜單管理 -->
+      <div id="adminPanel_menus" class="admin-panel hidden">
+        <div class="admin-card">
+          <div class="admin-card-header">
+            <h2 class="admin-card-title">
+              <i class="fa-solid fa-file-excel" style="color:#16a34a"></i> 隨時匯入最新「便當.xlsx」自動產生所有店家菜單
+            </h2>
+            <div class="admin-toolbar">
+              <button id="createNewStoreBtn" class="btn btn-sm btn-outline">
+                <i class="fa-solid fa-plus"></i> 手動新增店家
+              </button>
+              <button id="resetDefaultStoresBtn" class="btn btn-sm btn-outline">
+                <i class="fa-solid fa-rotate-left"></i> 還原內建 35 家預設菜單
+              </button>
+            </div>
+          </div>
+
+          <label for="excelFileInput" id="excelDropZone" class="excel-drop-zone" style="display:block;">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <div style="font-size: 16px; font-weight: 800; margin-bottom: 4px;">
+              點擊此處選擇您的「便當.xlsx」檔案，或直接將 Excel 拖曳至此處
+            </div>
+            <div style="font-size: 13px; color: #64748b;">
+              系統已內建您目前的 35 家便當店（共 898 項餐點）。當您的 Excel 漲價或新增工作表時，隨時上傳即可一秒更新全部菜單！
+            </div>
+            <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" class="hidden" />
+          </label>
+
+          <div style="margin-bottom: 10px; font-weight: 700; font-size: 14px;">
+            目前系統共有 <span id="totalStoresCountLabel" style="color:var(--primary)">35</span> 家便當店（點擊左側店名可直接微調價格或新增/刪除品項）：
+          </div>
+
+          <div class="menu-editor-layout">
+            <div id="adminStoreEditorList" class="editor-store-list"></div>
+            <div id="adminStoreEditorDetail"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 後台分頁 4: 雲端多人同步設定 -->
+      <div id="adminPanel_cloud" class="admin-panel hidden">
+        <div class="admin-card">
+          <h2 class="admin-card-title" style="margin-bottom: 12px;">
+            <i class="fa-solid fa-cloud"></i> 跨手機 / 跨電腦多人訂購雲端同步設定
+          </h2>
+          <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 16px;">
+            選擇「Google 試算表 (Google Apps Script)」或「Firebase Realtime Database」，即可讓全公司同事用手機或自己的電腦打開網址點便當，所有訂單與繳費狀態都會即時匯集到您的後台！
+          </p>
+
+          <div class="form-group" style="max-width: 420px;">
+            <label for="cloudTypeSelect">資料同步模式</label>
+            <select id="cloudTypeSelect" class="form-control">
+              <option value="local">本機瀏覽器儲存 (同一台電腦測試 / 單機使用)</option>
+              <option value="gas">Google 試算表雲端同步 (免費・免伺服器・最推薦！)</option>
+              <option value="firebase">Firebase Realtime Database 即時資料庫</option>
+            </select>
+          </div>
+
+          <!-- Google Apps Script 設定說明 -->
+          <div id="gasConfigBlock" class="hidden" style="background:#f8fafc; padding:16px; border-radius:12px; border:1px solid var(--border); margin-bottom:16px;">
+            <div class="form-group">
+              <label for="gasUrlInput">Google Apps Script 網頁應用程式網址 (Web App URL)</label>
+              <input type="url" id="gasUrlInput" class="form-control" placeholder="https://script.google.com/macros/s/xxxxxx/exec" />
+            </div>
+            <div style="font-size: 13px; color: #334155; line-height: 1.7;">
+              <strong>📌 3 分鐘免費綁定您的 Google 試算表步驟：</strong>
+              <ol style="margin-left: 20px; margin-top: 6px;">
+                <li>在您的 Google 雲端硬碟新增一份空白「Google 試算表」，點選上方選單「<strong>擴充功能</strong>」→「<strong>Apps Script</strong>」。</li>
+                <li>開啟本資料夾內附的 <code>google_apps_script.js</code> 檔案，將裡面的程式碼全部複製貼上並儲存。</li>
+                <li>點選右上角「<strong>部署</strong>」→「<strong>新增部署作業</strong>」→ 類型選「<strong>網頁應用程式</strong>」。</li>
+                <li>執行身分選「<strong>我</strong>」，誰可以存取選「<strong>所有人 (Anyone)</strong>」，按部署並複製產生的網址貼到上方輸入框即可！</li>
+              </ol>
+            </div>
+          </div>
+
+          <!-- Firebase 設定說明 -->
+          <div id="firebaseConfigBlock" class="hidden" style="background:#f8fafc; padding:16px; border-radius:12px; border:1px solid var(--border); margin-bottom:16px;">
+            <div class="form-group">
+              <label for="firebaseUrlInput">Firebase Realtime Database 網址</label>
+              <input type="url" id="firebaseUrlInput" class="form-control" placeholder="https://your-project-default-rtdb.firebaseio.com" />
+            </div>
+          </div>
+
+          <button id="saveCloudConfigBtn" class="btn btn-primary">
+            <i class="fa-solid fa-floppy-disk"></i> 儲存雲端連線設定
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 浮動通知區 -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- 載入內建 35 家便當店預設菜單與主程式 -->
+  <script src="default_menus.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
